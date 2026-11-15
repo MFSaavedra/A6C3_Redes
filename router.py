@@ -15,35 +15,67 @@ from typing import NamedTuple, Optional
 #   [0:4] IP de destino: un byte por cada número de a.b.c.d
 #   [4:6] puerto de destino: entero sin signo de 2 bytes, big-endian
 #   [6]   TTL: entero sin signo de 1 byte
-#   [7:]  mensaje
-HEADER_SIZE = 7
+#   [7:9] ID del datagrama: entero sin signo de 2 bytes, big-endian
+#   [9:13] offset del fragmento: entero sin signo de 4 bytes, big-endian
+#   [13:17] tamaño del mensaje: entero sin signo de 4 bytes, big-endian
+#   [17] FLAG: 1 si quedan fragmentos, 0 si es el último
+#   [18:] mensaje
+HEADER_SIZE = 18
 BUFFER_SIZE = 65535  # cabe cualquier datagrama UDP
 
 
 def parse_packet(IP_packet: bytes) -> dict:
-    """Convierte un paquete IP en un dict con las llaves ip (str a.b.c.d), port (int), ttl (int) y
-    message (bytes, sin headers). Lanza ValueError si el paquete es más corto que el header."""
+    """Convierte un paquete IP en un dict con las llaves ip (str a.b.c.d), port (int), ttl (int), 
+    id (int), offset (int), size (int), flag (int) y message (bytes, sin headers). Lanza ValueError si el paquete es más corto que el header."""
     if len(IP_packet) < HEADER_SIZE:
         raise ValueError(f"el paquete tiene {len(IP_packet)} bytes y el header ocupa {HEADER_SIZE}")
+    size = int.from_bytes(IP_packet[13:17], "big")
+    message = bytes(IP_packet[HEADER_SIZE:])
+    flag = IP_packet[17]
+    if flag not in (0, 1):
+        raise ValueError(f"FLAG fuera de rango: {flag}")
+    if size != len(message):
+        raise ValueError(f"el tamaño declarado es {size}, pero el mensaje ocupa {len(message)} bytes")
     return {"ip": str(ipaddress.IPv4Address(bytes(IP_packet[0:4]))),
             "port": int.from_bytes(IP_packet[4:6], "big"),
             "ttl": IP_packet[6],
-            "message": bytes(IP_packet[7:])}
+            "id": int.from_bytes(IP_packet[7:9], "big"),
+            "offset": int.from_bytes(IP_packet[9:13], "big"),
+            "size": size,
+            "flag": flag,
+            "message": message}
 
 
 def create_packet(parsed_IP_packet: dict) -> bytes:
     """Inversa de parse_packet: arma el paquete IP en bytes a partir del dict. message puede ser
     bytes o str, que se codifica en UTF-8. Lanza ValueError si algún campo no cabe en el header."""
     ip = ipaddress.IPv4Address(parsed_IP_packet["ip"]).packed
-    port, ttl = parsed_IP_packet["port"], parsed_IP_packet["ttl"]
+    port = parsed_IP_packet["port"]
+    ttl = parsed_IP_packet["ttl"]
+    datagram_id = parsed_IP_packet.get("id", 0)
+    offset = parsed_IP_packet.get("offset", 0)
+    flag = parsed_IP_packet.get("flag", 0)
     if not 0 <= port <= 0xFFFF:
         raise ValueError(f"puerto fuera de rango: {port}")
     if not 0 <= ttl <= 0xFF:
         raise ValueError(f"TTL fuera de rango: {ttl}")
+    if not 0 <= datagram_id <= 0xFFFF:
+        raise ValueError(f"ID fuera de rango: {datagram_id}")
+    if not 0 <= offset <= 0xFFFFFFFF:
+        raise ValueError(f"offset fuera de rango: {offset}")
+    if flag not in (0, 1):
+        raise ValueError(f"FLAG fuera de rango: {flag}")
     message = parsed_IP_packet["message"]
     if isinstance(message, str):
         message = message.encode()
-    return ip + port.to_bytes(2, "big") + ttl.to_bytes(1, "big") + message
+    size = len(message)
+    if "size" in parsed_IP_packet and parsed_IP_packet["size"] != size:
+        raise ValueError(f"el tamaño declarado es {parsed_IP_packet['size']}, pero el mensaje ocupa {size} bytes")
+    if size > 0xFFFFFFFF:
+        raise ValueError(f"mensaje demasiado grande: {size} bytes")
+    return (ip + port.to_bytes(2, "big") + ttl.to_bytes(1, "big") +
+            datagram_id.to_bytes(2, "big") + offset.to_bytes(4, "big") +
+            size.to_bytes(4, "big") + flag.to_bytes(1, "big") + message)
 
 
 def address_str(address) -> str:
