@@ -204,8 +204,10 @@ def handle_packet(router_socket, router_address, routes_file_name, IP_packet):
     print(f"redirigiendo paquete {describe(packet)} con destino final {address_str(destination_address)} "
           f"desde {address_str(router_address)} hacia {address_str(next_hop)}")
     try:
-        router_socket.sendto(create_packet(packet), next_hop)
-    except OSError as error:  # por ejemplo, un siguiente salto inalcanzable
+        fragments = fragment_IP_packet(create_packet(packet), mtu)
+        for fragment in fragments:
+            router_socket.sendto(fragment, next_hop)
+    except (OSError, ValueError) as error:  # siguiente salto inalcanzable o MTU inválido
         print(f"No se pudo reenviar el paquete a {address_str(next_hop)} ({error})")
 
 
