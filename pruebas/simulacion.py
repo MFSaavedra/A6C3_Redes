@@ -24,7 +24,7 @@ def simulate(version, n):
         port, count = 8881, 0
         while port != 8885:
             routes_file = ROOT / "rutas" / f"rutas_R{port - 8880}_{version}.txt"
-            port = router.check_routes(str(routes_file), ("127.0.0.1", 8885))[1]
+            port = router.check_routes(str(routes_file), ("127.0.0.1", 8885))[0][1]
             count += 1
         hops.append(count)
     return hops

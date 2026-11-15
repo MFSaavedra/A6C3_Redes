@@ -97,6 +97,7 @@ class Route(NamedTuple):
     first_port: int                 # rango de puertos de destino, ambos extremos incluidos
     last_port: int
     next_hop: tuple                 # (IP, puerto) del siguiente salto
+    mtu: int
 
     @property
     def area(self) -> tuple:
@@ -121,9 +122,10 @@ def read_routes(routes_file_name: str) -> list:
                 continue
             try:
                 network, first_port, last_port, hop_ip, hop_port = fields[:5]
+                mtu = int(fields[5]) if len(fields) > 5 else 1500
                 routes.append(Route(ipaddress.IPv4Network(network, strict=False),  # 127.0.0.1/24 es 127.0.0.0/24
                                     int(first_port), int(last_port),
-                                    (str(ipaddress.IPv4Address(hop_ip)), int(hop_port))))
+                                    (str(ipaddress.IPv4Address(hop_ip)), int(hop_port)), mtu))
             except ValueError as error:
                 raise ValueError(f"{routes_file_name}, línea {line_number} ({line.strip()!r}): {error}") from None
     return routes
@@ -135,9 +137,10 @@ round_robin_state = {}
 
 
 def check_routes(routes_file_name: str, destination_address: tuple) -> Optional[tuple]:
-    """Retorna el siguiente salto (IP, puerto) hacia destination_address, o None si ninguna ruta
-    sirve. Recorre la tabla en orden, y la primera línea que calza define el área de destino: su red
-    y su rango de puertos. Si varias líneas llevan a esa misma área, se alternan con round-robin."""
+    """Retorna ((IP, puerto), MTU) del siguiente salto hacia destination_address,
+    o None si ninguna ruta sirve. Recorre la tabla en orden, y la primera línea
+    que calza define el área de destino: su red y su rango de puertos. Si varias
+    líneas llevan a esa misma área, se alternan con round-robin."""
     routes = read_routes(routes_file_name)
     for route in routes:
         if route.matches(destination_address):
@@ -145,7 +148,8 @@ def check_routes(routes_file_name: str, destination_address: tuple) -> Optional[
             key = (routes_file_name, route.area)
             position = round_robin_state.get(key, 0) % len(alternatives)
             round_robin_state[key] = (position + 1) % len(alternatives)
-            return alternatives[position].next_hop
+            selected = alternatives[position]
+            return selected.next_hop, selected.mtu
     return None
 
 
@@ -166,13 +170,14 @@ def handle_packet(router_socket, router_address, routes_file_name, IP_packet):
         print(packet["message"].decode(errors="replace"))
         return
     try:
-        next_hop = check_routes(routes_file_name, destination_address)
+        route = check_routes(routes_file_name, destination_address)
     except (OSError, ValueError) as error:
         print(f"No se pudo leer la tabla de rutas ({error}); se descarta el paquete {describe(packet)}")
         return
-    if next_hop is None:
+    if route is None:
         print(f"No hay rutas hacia {address_str(destination_address)} para paquete {describe(packet)}")
         return
+    next_hop, mtu = route
     packet["ttl"] -= 1  # el mensaje muestra el paquete tal como se reenvía
     print(f"redirigiendo paquete {describe(packet)} con destino final {address_str(destination_address)} "
           f"desde {address_str(router_address)} hacia {address_str(next_hop)}")
