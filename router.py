@@ -219,8 +219,9 @@ def check_routes(routes_file_name: str, destination_address: tuple) -> Optional[
 
 def handle_packet(router_socket, router_address, routes_file_name, IP_packet):
     """Procesa un paquete recibido. Si llega con TTL 0 lo descarta, aunque vaya dirigido a este
-    router. Si no, imprime su mensaje si es para este router, o lo reenvía con el TTL disminuido en
-    1 al siguiente salto que entrega check_routes."""
+    router. Si no, almacena los fragmentos dirigidos a este router por ID e intenta reensamblarlos;
+    los demás paquetes se reenvían con el TTL disminuido en 1 al siguiente salto que entrega
+    check_routes."""
     try:
         packet = parse_packet(IP_packet)
     except ValueError as error:
@@ -231,8 +232,11 @@ def handle_packet(router_socket, router_address, routes_file_name, IP_packet):
         return
     destination_address = (packet["ip"], packet["port"])
     if destination_address == router_address:
-        received_packets.setdefault(packet["id"], []).append(IP_packet)
-        print(packet["message"].decode(errors="replace"))
+        fragments = received_packets.setdefault(packet["id"], [])
+        fragments.append(IP_packet)
+        reassembled_packet = reassemble_IP_packet(fragments)
+        if reassembled_packet is not None:
+            print(parse_packet(reassembled_packet)["message"].decode(errors="replace"))
         return
     try:
         route = check_routes(routes_file_name, destination_address)

@@ -11,8 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from router import (check_routes, create_packet, fragment_IP_packet, handle_packet, parse_packet,
-                    reassemble_IP_packet)  # noqa: E402
+from router import (check_routes, create_packet, fragment_IP_packet, handle_packet, parse_packet, received_packets, reassemble_IP_packet)  # noqa: E402
 
 
 def routes(name):
@@ -160,5 +159,24 @@ reassembled = reassemble_IP_packet([fragments[2], fragments[0], fragments[3], fr
 check("reensamblaje del paquete completo con fragmentos desordenados", reassembled, fragment_source)
 check("lista incompleta de fragmentos", reassemble_IP_packet(fragments[:-1]), None)
 check("paquete sin fragmentar", reassemble_IP_packet([fragment_source]), fragment_source)
+
+print("\n== Recepción, almacenamiento y reensamblaje por ID")
+received_packets.clear()
+router_address = ("127.0.0.1", 8881)
+packet_a = create_packet({"ip": router_address[0], "port": router_address[1], "ttl": 10, "id": 101, "message": b"ABCDEFGHIJKLMNO"})
+packet_b = create_packet({"ip": router_address[0], "port": router_address[1], "ttl": 10, "id": 202, "message": b"1234567890abcde"})
+fragments_a = fragment_IP_packet(packet_a, 23)
+fragments_b = fragment_IP_packet(packet_b, 23)
+received_order = [fragments_a[1], fragments_b[0], fragments_a[0], fragments_b[2], fragments_a[2], fragments_b[1]]
+fake_socket, output = FakeSocket(), io.StringIO()
+with contextlib.redirect_stdout(output):
+    for fragment in received_order:
+        handle_packet(fake_socket, router_address, routes("rutas_R1_v3.txt"), fragment)
+check("IDs almacenados", set(received_packets), {101, 202})
+check("fragmentos del ID 101", received_packets[101], [fragments_a[1], fragments_a[0], fragments_a[2]])
+check("fragmentos del ID 202", received_packets[202], [fragments_b[0], fragments_b[2], fragments_b[1]])
+check("mensajes reensamblados en orden de llegada completa", output.getvalue().splitlines(),
+      ["ABCDEFGHIJKLMNO", "1234567890abcde"])
+check("fragmentos locales no reenviados", fake_socket.sent, [])
 
 print("\nTodas las pruebas pasaron")
