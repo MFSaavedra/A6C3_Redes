@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from router import check_routes, create_packet, handle_packet, parse_packet  # noqa: E402
+from router import check_routes, create_packet, fragment_IP_packet, handle_packet, parse_packet  # noqa: E402
 
 
 def routes(name):
@@ -143,5 +143,17 @@ check("R4 hacia R5: alternativas y sus MTU", r4_results, {(("127.0.0.1", 8882), 
 # R5 -> R4 o R3: MTU 140 y 55.
 r5_results = {check_routes(routes("rutas_R5_v3_mtu.txt"), ("127.0.0.1", 8881)) for _ in range(2)}
 check("R5 hacia R1: alternativas y sus MTU", r5_results, {(("127.0.0.1", 8884), 140), (("127.0.0.1", 8883), 55)})
+
+print("\n== Fragmentación IP")
+fragment_source = create_packet({"ip": "127.0.0.1", "port": 8885, "ttl": 10, "id": 42, "offset": 0, "flag": 0, "message": bytes(range(100))})
+check("paquete que cabe en MTU 118", fragment_IP_packet(fragment_source, 118), [fragment_source])
+check("cantidad de paquetes cuando no requiere fragmentación", len(fragment_IP_packet(fragment_source, 118)), 1)
+fragments = fragment_IP_packet(fragment_source, 50)
+check("cantidad de fragmentos para MTU 50", len(fragments), 4)
+check("tamaño total de cada fragmento", [len(fragment) for fragment in fragments], [50, 50, 50, 22])
+parsed_fragments = [parse_packet(fragment) for fragment in fragments]
+check("offsets", [fragment["offset"] for fragment in parsed_fragments], [0, 32, 64, 96])
+check("FLAG", [fragment["flag"] for fragment in parsed_fragments], [1, 1, 1, 0])
+check("reensamblaje del mensaje", b"".join(fragment["message"] for fragment in parsed_fragments), bytes(range(100)))
 
 print("\nTodas las pruebas pasaron")

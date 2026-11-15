@@ -78,6 +78,28 @@ def create_packet(parsed_IP_packet: dict) -> bytes:
             size.to_bytes(4, "big") + flag.to_bytes(1, "big") + message)
 
 
+def fragment_IP_packet(IP_packet: bytes, MTU: int) -> list:
+    """Fragmenta IP_packet en paquetes cuyo tamaño total no supera MTU."""
+    if MTU <= HEADER_SIZE:
+        raise ValueError(f"MTU debe ser mayor que el header de {HEADER_SIZE} bytes")
+    if len(IP_packet) <= MTU:
+        return [IP_packet]
+
+    packet = parse_packet(IP_packet)
+    message_limit = MTU - HEADER_SIZE
+    fragments = []
+    initial_offset = packet["offset"]
+    for offset in range(0, len(packet["message"]), message_limit):
+        message = packet["message"][offset:offset + message_limit]
+        fragment = dict(packet)
+        fragment["offset"] = initial_offset + offset
+        fragment["message"] = message
+        fragment["size"] = len(message)
+        fragment["flag"] = int(offset + len(message) < len(packet["message"]))
+        fragments.append(create_packet(fragment))
+    return fragments
+
+
 def address_str(address) -> str:
     """Dirección (IP, puerto) como texto, ej: 127.0.0.1:8881."""
     return f"{address[0]}:{address[1]}"
