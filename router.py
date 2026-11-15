@@ -100,6 +100,45 @@ def fragment_IP_packet(IP_packet: bytes, MTU: int) -> list:
     return fragments
 
 
+def reassemble_IP_packet(fragment_list: list) -> Optional[bytes]:
+    """Reensambla una lista de fragmentos IP ordenándolos por offset."""
+    if not fragment_list:
+        return None
+
+    fragments = [parse_packet(fragment) for fragment in fragment_list]
+    if len(fragments) == 1:
+        fragment = fragments[0]
+        if fragment["offset"] == 0 and fragment["flag"] == 0:
+            return fragment_list[0]
+        return None
+
+    fragments.sort(key=lambda fragment: fragment["offset"])
+    first = fragments[0]
+    if first["offset"] != 0:
+        return None
+
+    identity = ("ip", "port", "ttl", "id")
+    expected_offset = 0
+    for index, fragment in enumerate(fragments):
+        if any(fragment[field] != first[field] for field in identity):
+            return None
+        if fragment["offset"] != expected_offset:
+            return None
+        if index < len(fragments) - 1 and fragment["flag"] != 1:
+            return None
+        expected_offset += fragment["size"]
+
+    if fragments[-1]["flag"] != 0:
+        return None
+
+    packet = dict(first)
+    packet["offset"] = 0
+    packet["flag"] = 0
+    packet["message"] = b"".join(fragment["message"] for fragment in fragments)
+    packet["size"] = len(packet["message"])
+    return create_packet(packet)
+
+
 def address_str(address) -> str:
     """Dirección (IP, puerto) como texto, ej: 127.0.0.1:8881."""
     return f"{address[0]}:{address[1]}"

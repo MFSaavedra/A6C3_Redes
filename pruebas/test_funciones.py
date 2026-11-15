@@ -11,7 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from router import check_routes, create_packet, fragment_IP_packet, handle_packet, parse_packet  # noqa: E402
+from router import (check_routes, create_packet, fragment_IP_packet, handle_packet, parse_packet,
+                    reassemble_IP_packet)  # noqa: E402
 
 
 def routes(name):
@@ -155,5 +156,9 @@ parsed_fragments = [parse_packet(fragment) for fragment in fragments]
 check("offsets", [fragment["offset"] for fragment in parsed_fragments], [0, 32, 64, 96])
 check("FLAG", [fragment["flag"] for fragment in parsed_fragments], [1, 1, 1, 0])
 check("reensamblaje del mensaje", b"".join(fragment["message"] for fragment in parsed_fragments), bytes(range(100)))
+reassembled = reassemble_IP_packet([fragments[2], fragments[0], fragments[3], fragments[1]])
+check("reensamblaje del paquete completo con fragmentos desordenados", reassembled, fragment_source)
+check("lista incompleta de fragmentos", reassemble_IP_packet(fragments[:-1]), None)
+check("paquete sin fragmentar", reassemble_IP_packet([fragment_source]), fragment_source)
 
 print("\nTodas las pruebas pasaron")
