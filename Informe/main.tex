@@ -1,0 +1,470 @@
+% Template:     Informe LaTeX
+% Documento:    Archivo principal
+% Versión:      8.4.4 (02/12/2025)
+% Codificación: UTF-8
+%
+% Autor: Pablo Pizarro R.
+%        pablo@ppizarror.com
+%
+% Manual template: [https://latex.ppizarror.com/informe]
+% Licencia MIT:    [https://opensource.org/licenses/MIT]
+
+% CREACIÓN DEL DOCUMENTO
+\documentclass[
+	spanish, % Idioma: spanish, english, etc.
+	letterpaper, oneside
+]{article}
+
+% INFORMACIÓN DEL DOCUMENTO
+\def\documenttitle {Actividad 5}
+\def\documentsubtitle {Forwarding básico}
+\def\documentsubject {Redes IP}
+
+\def\documentauthor {María Moya G., M. Fernando Saavedra}
+\def\coursename {Redes}
+\def\coursecode {CC4303}
+
+\def\universityname {Universidad de Chile}
+\def\universityfaculty {Facultad de Ciencias Físicas y Matemáticas}
+\def\universitydepartment {Departamento de Ciencias de la Computación}
+\def\universitydepartmentimage {departamentos/dcc}
+\def\universitydepartmentimagecfg {height=1.57cm}
+\def\universitylocation {Santiago de Chile}
+
+% INTEGRANTES, PROFESORES Y FECHAS
+\def\authortable {
+	\begin{tabular}{ll}
+		Integrantes:
+		& \begin{tabular}[t]{l}
+			María Moya G. \\
+			M. Fernando Saavedra
+		\end{tabular} \\
+		Profesor:
+		& \begin{tabular}[t]{l}
+			Ivana Bachmann
+		\end{tabular} \\
+		Auxiliar:
+		& \begin{tabular}[t]{l}
+			Julián Ferreira
+		\end{tabular} \\
+		Ayudantes:
+		& \begin{tabular}[t]{l}
+			Diego García G. \\
+			Valeria Serrano
+		\end{tabular} \\
+		& \\
+		\multicolumn{2}{l}{Fecha de realización: \today} \\
+		\multicolumn{2}{l}{Fecha de entrega: 18 de noviembre de 2026} \\
+		\multicolumn{2}{l}{\universitylocation}
+	\end{tabular}
+}
+
+% IMPORTACIÓN DEL TEMPLATE
+\input{template}
+
+% CONVENCIÓN TIPOGRÁFICA
+% El cuerpo del informe se compone en una sola fuente: no se usa monoespaciado,
+% negrita ni cursiva para destacar nombres de archivo, funciones ni comandos.
+% La tipografía solo cambia en los bloques de salida, que reproducen salidas
+% literales de los routers y de las pruebas. Las macros se conservan como marcas
+% semánticas y no producen ningún cambio visual. \code solo permite cortar la
+% línea después de cada guion bajo, porque los identificadores largos, como
+% rutas_R2_v2_mala.txt, no se pueden dividir en sílabas y se salían del margen.
+\newcommand{\codeunderscore}{\textunderscore\allowbreak}
+\newcommand{\code}[1]{{\let\_\codeunderscore#1}}     % identificadores, funciones, archivos, comandos (check_routes, router.py)
+\newcommand{\field}[1]{#1}    % campos del header y llaves del paquete decodificado (ip, port, ttl, message)
+
+% BLOQUES DE SALIDA
+% Las líneas que imprimen los routers superan el ancho de la página, así que las
+% salidas se componen con listings, que corta las líneas largas en un espacio y
+% marca la continuación con una flecha. Aparte de eso equivalen a un verbatim.
+\lstdefinestyle{salida}{
+	aboveskip=0.6em,
+	basicstyle=\ttfamily\footnotesize,
+	belowskip=0.6em,
+	breakatwhitespace=true,
+	breakindent=1.5em,
+	breaklines=true,
+	columns=fixed,
+	frame=none,
+	keepspaces=true,
+	numbers=none,
+	postbreak=\mbox{\textcolor{gray}{$\hookrightarrow$}\space},
+	showstringspaces=false
+}
+% Con columns=fixed cada carácter ocupa una columna de ancho basewidth, que se
+% mide al iniciar cada bloque como el ancho de un dígito en la fuente del bloque.
+% Así las columnas de las salidas quedan alineadas.
+\newlength{\salidachar}
+\lstnewenvironment{salida}[1][]{\settowidth{\salidachar}{\ttfamily\footnotesize 0}\lstset{style=salida,basewidth=\salidachar,#1}}{}
+
+% INICIO DE PÁGINAS
+\begin{document}
+
+% PORTADA
+\templatePortrait
+
+% CONFIGURACIÓN DE PÁGINA Y ENCABEZADOS
+\templatePagecfg
+
+% TABLA DE CONTENIDOS - ÍNDICE
+\templateIndex
+
+% CONFIGURACIONES FINALES
+\templateFinalcfg
+
+% ======================= INICIO DEL DOCUMENTO =======================
+
+\section{Mini-Internet sin TTL}
+Cada router es un proceso con un socket UDP en un par (IP, puerto), y los paquetes IP simulados viajan como datagramas UDP. \code{router.py} contiene el router y las funciones \code{parse\_packet}, \code{create\_packet} y \code{check\_routes}, y \code{enviar.py} es el script de envío del paso 5. \code{red.py} levanta varios routers a la vez y antepone a lo que imprime cada uno su nombre; RN escucha en el puerto $8880 + N$ y Rdefault en el 7000. Las tablas están en \code{rutas/} como \code{rutas\_RN\_vK.txt}: v1 y v2 son los ejemplos 1 y 2 de la guía, v3 la red de 5 routers, v4 la de 7 y v5 la de 5 con router default. Esta sección describe la versión sin TTL, y la sección~\ref{sec:con-ttl}, sus cambios.
+
+\subsection{Tabla de rutas de la actividad y tabla de rutas real}
+% Paso 1 de la parte I.
+Como en una tabla real, cada línea asocia una red de destino en notación CIDR con el siguiente salto, y cada router decide solo el siguiente salto, no el camino completo. Las diferencias son:
+\begin{itemize}
+	\item El destino incluye un rango de puertos y el siguiente salto es un par (IP, puerto), porque todos los routers comparten la IP 127.0.0.1. Un router real solo mira la IP de destino.
+	\item Se usa la primera línea que calza, así que el orden importa. Un router real elige la ruta más específica (longest prefix match), sin importar su posición.
+	\item Las rutas alternativas se alternan paquete a paquete con round-robin. Un router real elige por métrica y, si varias empatan, reparte el tráfico por flujo (ECMP).
+	\item La tabla es estática. Una real se actualiza con protocolos de ruteo, como RIP, OSPF o BGP, y tiene más columnas, como la interfaz y la métrica.
+\end{itemize}
+
+\subsection{Router}
+% Pasos 2, 3 y 7 de la parte I.
+El router se ejecuta con \code{python3 router.py router\_IP router\_puerto router\_rutas.txt}. Lee los parámetros de \code{sys.argv}, escucha en un socket UDP sin timeout, así que \code{recvfrom} es bloqueante, y al partir imprime sus parámetros:
+\begin{salida}
+Router 127.0.0.1:8881 escuchando, tabla de rutas rutas/rutas_R1_v1.txt (1 ruta)
+\end{salida}
+Si un paquete va dirigido al router, este imprime solo el mensaje. Si no, lo reenvía al siguiente salto que entrega \code{check\_routes} e imprime \code{redirigiendo paquete ...}, o \code{No hay rutas hacia ...} si no hay ruta. Los mensajes muestran el paquete de forma legible, como [127.0.0.1:8883, 'hola'], y la tabla se vuelve a leer con cada paquete. En la red del ejemplo 2 (R1 -- R2 -- R3) se enviaron a R1 paquetes para R1, R2, R3 y el puerto 8884, que no tiene router (\code{pruebas/ejemplos.sh}):
+\begin{salida}
+[R1] hola R1
+[R1] redirigiendo paquete [127.0.0.1:8882, 'hola R2'] con destino final 127.0.0.1:8882 desde 127.0.0.1:8881 hacia 127.0.0.1:8882
+[R2] hola R2
+[R1] redirigiendo paquete [127.0.0.1:8883, 'hola R3'] con destino final 127.0.0.1:8883 desde 127.0.0.1:8881 hacia 127.0.0.1:8882
+[R2] redirigiendo paquete [127.0.0.1:8883, 'hola R3'] con destino final 127.0.0.1:8883 desde 127.0.0.1:8882 hacia 127.0.0.1:8883
+[R3] hola R3
+[R1] No hay rutas hacia 127.0.0.1:8884 para paquete [127.0.0.1:8884, 'hola']
+\end{salida}
+
+\subsection{Estructura de los paquetes}
+% Paso 4 de la parte I.
+El header es el sugerido, de 6 bytes: 4 para la IP, uno por cada número de a.b.c.d, y 2 para el puerto, en big-endian; luego viene el mensaje. \code{parse\_packet} entrega un diccionario con las llaves \field{ip}, \field{port} y \field{message}, este último en bytes, y \code{create\_packet} hace lo inverso. La prueba del enunciado, con un paquete armado a mano (\code{pruebas/test\_funciones.py}):
+\begin{salida}
+IP_packet_v1 = b'\x7f\x00\x00\x01"\xb5hola'
+parse_packet(IP_packet_v1) = {'ip': '127.0.0.1', 'port': 8885, 'message': b'hola'}
+IP_packet_v1 == IP_packet_v2 ? True
+\end{salida}
+
+\subsection{Script de envío}
+% Paso 5 de la parte I.
+\code{enviar.py} recibe los datos como argumentos, en el orden del enunciado, y envía el paquete con un socket UDP nuevo. El mensaje va entre comillas si tiene espacios.
+\begin{salida}
+python3 enviar.py IP_router_final puerto_router_final mensaje IP_envío puerto_envío
+\end{salida}
+
+\subsection{Función check\_routes}
+% Paso 6 de la parte I.
+\code{check\_routes} recorre la tabla en orden. Una línea calza si la IP de destino pertenece a su red y el puerto está en su rango, y la función retorna el siguiente salto de la primera que calza, o \code{None}. La prueba con las tablas del ejemplo 2, con destinos dentro y fuera de la red:
+\begin{salida}
+check_routes(rutas_R1_v2.txt, ('127.0.0.1', 8883)) -> ('127.0.0.1', 8882)
+check_routes(rutas_R2_v2.txt, ('127.0.0.1', 8881)) -> ('127.0.0.1', 8881)
+check_routes(rutas_R2_v2.txt, ('127.0.0.1', 8883)) -> ('127.0.0.1', 8883)
+check_routes(rutas_R1_v2.txt, ('127.0.0.1', 8884)) -> None
+check_routes(rutas_R1_v2.txt, ('10.0.0.1', 8883)) -> None
+\end{salida}
+
+\subsection{Round-robin}
+\label{sec:round-robin}
+% Paso 8 de la parte I.
+Cada línea lleva a un área de la red, definida por su red y su rango de puertos, y las líneas con la misma área son rutas alternativas. \code{check\_routes} sigue recorriendo la tabla en orden: la primera línea que calza define el área, y las candidatas son todas las líneas con esa área. El diccionario global \code{round\_robin\_state} guarda, para cada área de cada tabla, la posición de la próxima candidata, y cada llamada la avanza en uno, en ciclo. Así se admite cualquier cantidad de alternativas y cada área lleva su propia cuenta. La variable es global para conservar la firma de \code{check\_routes}. Como la primera línea que calza define el área, una ruta más general, como la default, nunca se alterna con las específicas que la preceden.
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics{img/red_5_routers.pdf}
+	\caption{Red de 5 routers, con el puerto de cada uno. Todos escuchan en 127.0.0.1.}
+	\label{fig:red-5}
+\end{figure}
+
+Para el test 1 se enviaron 8 paquetes de R1 a R5 en la red de 5 routers (figura~\ref{fig:red-5}), de a uno (\code{pruebas/round\_robin.sh}). Los siguientes saltos que eligió R2, incluidos los de paquetes que pasaron varias veces por él, alternan entre R3 y R4:
+\begin{salida}
+8883 8884 8883 8884 8883 8884 8883 8884 8883 8884 8883 8884 8883 8884 8883 8884
+\end{salida}
+
+Para el test 2 se agregaron R0, en el puerto 8880 y conectado a R1 y R2, y R6, en el puerto 8886 y conectado a R2 y R3 (figura~\ref{fig:red-7}). Ahí R2 tiene dos áreas con varias rutas: hacia R0 y R1, y hacia R3, R4, R5 y R6. Con 8 paquetes de R1 a R5 intercalados con 8 de R5 a R1, R2 recorre cada área en ciclo, sin que una afecte a la otra:
+\begin{salida}
+hacia 127.0.0.1:8885: 8883 8884 8886 8883 8884 8886 8883 8884 8886 8883 8884 8886 8883 8884 ...
+hacia 127.0.0.1:8881: 8881 8880 8881 8880 8881 8880 8881 8880 8881 8880 8881 8880 8881 8880 8881
+\end{salida}
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics{img/red_7_routers.pdf}
+	\caption{Red de 7 routers: la de 5 routers más R0 y R6, en gris, con sus enlaces.}
+	\label{fig:red-7}
+\end{figure}
+
+\subsection{Router default}
+\label{sec:default}
+% Paso 9 de la parte I.
+El router default, en 127.0.0.1:7000, se conecta con cada router de la red de 5 routers (figura~\ref{fig:red-default}). Solo hubo que agregar a cada tabla la ruta default, que calza con cualquier IP y puerto:
+\begin{salida}
+0.0.0.0/0 0 65535 127.0.0.1 7000
+\end{salida}
+La ruta default debe ir en la última línea. Como \code{check\_routes} usa la primera ruta que calza, una default al principio taparía a todas las demás; al final, solo se usa cuando ninguna otra sirve. La tabla~\ref{tab:rutas-v5} muestra las tablas resultantes. El router default tiene una ruta hacia cada router y ninguna default, porque es la salida hacia el resto de Internet: con una default hacia la red, los paquetes de afuera volverían a entrar.
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics{img/red_default.pdf}
+	\caption[Red de 5 routers con el router default.]{Red de 5 routers con el router default, conectado a cada router con un enlace punteado.}
+	\label{fig:red-default}
+\end{figure}
+
+\begin{table}[ht]
+	\centering
+	\caption{Tablas de rutas de la red de 5 routers con router default.}
+	\label{tab:rutas-v5}
+	\begin{minipage}[t]{0.49\textwidth}
+\begin{salida}
+rutas_R1_v5.txt
+127.0.0.1/24 8882 8885 127.0.0.1 8882
+0.0.0.0/0 0 65535 127.0.0.1 7000
+
+rutas_R2_v5.txt
+127.0.0.1/24 8881 8881 127.0.0.1 8881
+127.0.0.1/24 8883 8885 127.0.0.1 8883
+127.0.0.1/24 8883 8885 127.0.0.1 8884
+0.0.0.0/0 0 65535 127.0.0.1 7000
+
+rutas_R3_v5.txt
+127.0.0.1/24 8881 8882 127.0.0.1 8882
+127.0.0.1/24 8881 8882 127.0.0.1 8885
+127.0.0.1/24 8884 8885 127.0.0.1 8882
+127.0.0.1/24 8884 8885 127.0.0.1 8885
+0.0.0.0/0 0 65535 127.0.0.1 7000
+\end{salida}
+	\end{minipage}\hfill
+	\begin{minipage}[t]{0.49\textwidth}
+\begin{salida}
+rutas_R4_v5.txt
+127.0.0.1/24 8881 8883 127.0.0.1 8882
+127.0.0.1/24 8881 8883 127.0.0.1 8885
+127.0.0.1/24 8885 8885 127.0.0.1 8882
+127.0.0.1/24 8885 8885 127.0.0.1 8885
+0.0.0.0/0 0 65535 127.0.0.1 7000
+
+rutas_R5_v5.txt
+127.0.0.1/24 8881 8884 127.0.0.1 8884
+127.0.0.1/24 8881 8884 127.0.0.1 8883
+0.0.0.0/0 0 65535 127.0.0.1 7000
+
+rutas_Rdefault_v5.txt
+127.0.0.1/24 8881 8881 127.0.0.1 8881
+127.0.0.1/24 8882 8882 127.0.0.1 8882
+127.0.0.1/24 8883 8883 127.0.0.1 8883
+127.0.0.1/24 8884 8884 127.0.0.1 8884
+127.0.0.1/24 8885 8885 127.0.0.1 8885
+\end{salida}
+	\end{minipage}
+\end{table}
+
+Los paquetes con destino fuera de la red llegan al router default, que no tiene ruta hacia ellos (\code{pruebas/default.sh}). Un paquete de R1 a R5 enviado en la misma prueba siguió las rutas de siempre.
+\begin{salida}
+[R1] redirigiendo paquete [127.0.0.1:8886, 'hola R6'] con destino final 127.0.0.1:8886 desde 127.0.0.1:8881 hacia 127.0.0.1:7000
+[Rdefault] No hay rutas hacia 127.0.0.1:8886 para paquete [127.0.0.1:8886, 'hola R6']
+[R3] redirigiendo paquete [10.0.0.1:8881, 'hola 10.0.0.1'] con destino final 10.0.0.1:8881 desde 127.0.0.1:8883 hacia 127.0.0.1:7000
+[Rdefault] No hay rutas hacia 10.0.0.1:8881 para paquete [10.0.0.1:8881, 'hola 10.0.0.1']
+\end{salida}
+
+\section{Pruebas del mini-Internet sin TTL}
+\label{sec:pruebas-sin-ttl}
+Las pruebas se hicieron en localhost, con Arch Linux y Python 3.14, usando la versión sin TTL y los scripts de \code{pruebas/}. \code{pruebas/saltos.py} resume los saltos y el camino de cada paquete. Con la versión final, los mismos scripts dan los mismos caminos.
+
+\subsection{Tabla de rutas mal configurada}
+\label{sec:mal-configurada}
+En el ejemplo 2, la segunda línea de la tabla mal configurada, \code{rutas\_R2\_v2\_mala.txt}, envía a R1 los paquetes para R3. Un paquete de R1 a R3 (\code{pruebas/mal\_configurada.sh}) queda en un ciclo infinito: R2 lo devuelve a R1, y R1 se lo vuelve a enviar a R2.
+\begin{salida}
+[R1] redirigiendo paquete [127.0.0.1:8883, 'hola R3'] con destino final 127.0.0.1:8883 desde 127.0.0.1:8881 hacia 127.0.0.1:8882
+[R2] redirigiendo paquete [127.0.0.1:8883, 'hola R3'] con destino final 127.0.0.1:8883 desde 127.0.0.1:8882 hacia 127.0.0.1:8881
+...
+\end{salida}
+Hubo 25195 reenvíos en 2 segundos, y el ciclo solo terminó al detener los routers. Cada paquete nuevo hacia R3 se suma al ciclo: con tres, R1 y R2 llegaron al 82\% y al 98\% de CPU. El tráfico que no pasa por la ruta mala siguió funcionando.
+
+\subsection{Saltos en la red de 5 routers}
+% Prueba 2 sin TTL.
+Se enviaron 8 paquetes de R1 a R5, de a uno, con \code{pruebas/round\_robin.sh}, y las repeticiones dieron lo mismo:
+\begin{salida}
+mensaje     saltos  resultado                  camino
+R1 a R5 #1       7  llegó a R5                 R1 R2 R3 R2 R4 R2 R3 R5
+R1 a R5 #2       3  llegó a R5                 R1 R2 R4 R5
+R1 a R5 #3       7  llegó a R5                 R1 R2 R3 R2 R4 R2 R3 R5
+R1 a R5 #4       3  llegó a R5                 R1 R2 R4 R5
+...
+\end{salida}
+Los paquetes dan 7 o 3 saltos, alternadamente, así que no siempre la misma cantidad. Tras dos paquetes, R2, R3 y R4 vuelven a su posición inicial de round-robin, y la secuencia se repite. El mínimo es 3 saltos, y el promedio, 5, es 67\% mayor: round-robin no considera el largo de las rutas, y R3 y R4 pueden devolver el paquete a R2 aunque R5 sea su vecino. En ráfagas de 20 y de 100 paquetes, esta última con TTL 64, hubo entre 3 y 15 saltos, pero el promedio siguió siendo exactamente 5. Intercalar los paquetes solo reparte de otra forma los saltos extra.
+
+\subsection{Saltos en la red de 7 routers}
+\label{sec:saltos-7}
+% Prueba 3 sin TTL.
+Las tablas de la red de 7 routers (tabla~\ref{tab:rutas-v4}) siguen el criterio de las de 5 routers: cada router divide los puertos en los menores y los mayores que el suyo, y para cada área usa como alternativas a todos los vecinos que llegan a ella sin volver a pasar por él.
+
+\begin{table}[ht]
+	\centering
+	\caption{Tablas de rutas de la red de 7 routers.}
+	\label{tab:rutas-v4}
+	\begin{minipage}[t]{0.49\textwidth}
+\begin{salida}
+rutas_R0_v4.txt
+127.0.0.1/24 8881 8886 127.0.0.1 8881
+127.0.0.1/24 8881 8886 127.0.0.1 8882
+
+rutas_R1_v4.txt
+127.0.0.1/24 8880 8880 127.0.0.1 8880
+127.0.0.1/24 8880 8880 127.0.0.1 8882
+127.0.0.1/24 8882 8886 127.0.0.1 8882
+127.0.0.1/24 8882 8886 127.0.0.1 8880
+
+rutas_R2_v4.txt
+127.0.0.1/24 8880 8881 127.0.0.1 8881
+127.0.0.1/24 8880 8881 127.0.0.1 8880
+127.0.0.1/24 8883 8886 127.0.0.1 8883
+127.0.0.1/24 8883 8886 127.0.0.1 8884
+127.0.0.1/24 8883 8886 127.0.0.1 8886
+
+rutas_R6_v4.txt
+127.0.0.1/24 8880 8885 127.0.0.1 8882
+127.0.0.1/24 8880 8885 127.0.0.1 8883
+\end{salida}
+	\end{minipage}\hfill
+	\begin{minipage}[t]{0.49\textwidth}
+\begin{salida}
+rutas_R3_v4.txt
+127.0.0.1/24 8880 8882 127.0.0.1 8882
+127.0.0.1/24 8880 8882 127.0.0.1 8885
+127.0.0.1/24 8880 8882 127.0.0.1 8886
+127.0.0.1/24 8884 8886 127.0.0.1 8882
+127.0.0.1/24 8884 8886 127.0.0.1 8885
+127.0.0.1/24 8884 8886 127.0.0.1 8886
+
+rutas_R4_v4.txt
+127.0.0.1/24 8880 8883 127.0.0.1 8882
+127.0.0.1/24 8880 8883 127.0.0.1 8885
+127.0.0.1/24 8885 8886 127.0.0.1 8882
+127.0.0.1/24 8885 8886 127.0.0.1 8885
+
+rutas_R5_v4.txt
+127.0.0.1/24 8880 8884 127.0.0.1 8884
+127.0.0.1/24 8880 8884 127.0.0.1 8883
+127.0.0.1/24 8886 8886 127.0.0.1 8883
+127.0.0.1/24 8886 8886 127.0.0.1 8884
+\end{salida}
+	\end{minipage}
+\end{table}
+
+Con 8 paquetes de R1 a R5, de a uno, los saltos fueron 9, 5, 13, 6, 8, 12, 5 y 13. Son más variables y más largos que con 5 routers, y ninguno alcanzó el mínimo de 3. Simulando con \code{check\_routes} (\code{pruebas/simulacion.py}), la secuencia se repite cada 33 paquetes y promedia 8.73 saltos, casi tres veces el mínimo. Hay más alternativas que alejan al paquete de R5: R1 puede enviarlo a R0, que lo devuelve a R1 la mitad de las veces, y R3 lo envía directo a R5 solo en uno de cada tres reenvíos. En ráfaga, el total de saltos fue el mismo que enviando de a uno la misma cantidad de paquetes. Con tráfico intercalado en ambos sentidos, los caminos de un sentido cambian con el del otro, porque R0 y R6 tienen una sola área que contiene a R1 y a R5.
+
+\section{Mini-Internet con TTL}
+\label{sec:con-ttl}
+
+\subsection{Nuevo header}
+% Paso 1 de la parte II.
+El TTL es un byte más al final del header (tabla~\ref{tab:header}), y \code{parse\_packet} agrega la llave \field{ttl}. La prueba del enunciado, con TTL 10:
+\begin{salida}
+IP_packet_v1 = b'\x7f\x00\x00\x01"\xb5\nhola'
+parse_packet(IP_packet_v1) = {'ip': '127.0.0.1', 'port': 8885, 'ttl': 10, 'message': b'hola'}
+IP_packet_v1 == IP_packet_v2 ? True
+\end{salida}
+Como \code{create\_packet} retorna bytes, no se necesita el \code{.encode()} del enunciado.
+
+\begin{table}[ht]
+	\centering
+	\caption{Estructura del paquete IP con TTL.}
+	\begin{tabular}{lll}
+		\hline
+		Bytes & Campo & Codificación \\
+		\hline
+		{[0:4]} & IP de destino & un byte por número de a.b.c.d \\
+		{[4:6]} & Puerto de destino & entero sin signo, big-endian \\
+		{[6]} & TTL & entero sin signo de 1 byte \\
+		{[7:]} & Mensaje & bytes, texto en UTF-8 \\
+		\hline
+	\end{tabular}
+	\label{tab:header}
+\end{table}
+
+\subsection{Descarte y decremento del TTL}
+% Pasos 2 y 3 de la parte II.
+Un paquete que llega con TTL 0 se descarta aunque vaya dirigido al router, porque el enunciado pide procesarlo solo si el TTL es mayor que 0. Si hay que reenviarlo, el TTL baja en 1 antes de imprimir el mensaje y reenviarlo, así que para llegar a un router a $k$ saltos se necesita un TTL de al menos $k + 1$. El paquete del enunciado, con puerto 8883 y TTL 1, enviado de R1 a R3 en el ejemplo 2 (\code{pruebas/ttl.sh}), se descarta en R2:
+\begin{salida}
+[R1] redirigiendo paquete [127.0.0.1:8883, TTL=0, 'hola'] con destino final 127.0.0.1:8883 desde 127.0.0.1:8881 hacia 127.0.0.1:8882
+[R2] Se recibió paquete [127.0.0.1:8883, TTL=0, 'hola'] con TTL 0
+\end{salida}
+Con TTL 2 el paquete llega a R3 con TTL 0 y R3 lo descarta; con TTL 3, llega.
+
+\subsection{Scripts de envío}
+% Paso 4 de la parte II.
+\code{enviar.py} recibe ahora el TTL como sexto argumento opcional, 64 por omisión. \code{prueba\_router.py} recibe los headers y el router inicial por \code{sys.argv}, lee el archivo desde la entrada estándar y envía cada línea en un paquete distinto, sin pausas:
+\begin{salida}
+python3 prueba_router.py "127.0.0.1;8885;10" 127.0.0.1 8881 < archivo.txt
+\end{salida}
+Los headers van entre comillas porque la shell interpreta el punto y coma. El archivo también se puede pasar como cuarto argumento.
+
+\section{Pruebas del mini-Internet con TTL}
+
+\subsection{Tabla de rutas mal configurada con TTL}
+Con TTL 10, la prueba de la sección~\ref{sec:mal-configurada} da:
+\begin{salida}
+[R1] redirigiendo paquete [127.0.0.1:8883, TTL=9, 'hola R3'] con destino final 127.0.0.1:8883 desde 127.0.0.1:8881 hacia 127.0.0.1:8882
+...
+[R2] redirigiendo paquete [127.0.0.1:8883, TTL=0, 'hola R3'] con destino final 127.0.0.1:8883 desde 127.0.0.1:8882 hacia 127.0.0.1:8881
+[R1] Se recibió paquete [127.0.0.1:8883, TTL=0, 'hola R3'] con TTL 0
+\end{salida}
+El paquete sigue sin llegar a R3, pero el ciclo termina tras 10 reenvíos, en vez de los miles por segundo que hubo sin TTL. El TTL no corrige el error de configuración, pero acota su costo a TTL reenvíos por paquete.
+
+\subsection{Orden de los paquetes}
+\label{sec:orden}
+Con \code{prueba\_router.py} se envió de R1 a R5, en la red de 5 routers, un archivo de 100 líneas numeradas (\code{pruebas/orden.sh}): tres veces con TTL 10 y una con TTL 64 (tabla~\ref{tab:orden}).
+
+\begin{table}[ht]
+	\centering
+	\caption[Envío de un archivo de 100 líneas de R1 a R5.]{Envío de un archivo de 100 líneas de R1 a R5. Un paquete está adelantado si llegó después de otro enviado más tarde.}
+	\begin{tabular}{cccccc}
+		\hline
+		Ejecución & TTL & Llegaron & Descartados & Saltos & Adelantados \\
+		& & & por TTL & mín.--máx. (promedio) & \\
+		\hline
+		1 & 10 & 95 & 5 & 3--9 (4.58) & 42 \\
+		2 & 10 & 94 & 6 & 3--9 (4.51) & 45 \\
+		3 & 10 & 92 & 8 & 3--9 (4.33) & 38 \\
+		4 & 64 & 100 & 0 & 3--15 (5.00) & 53 \\
+		\hline
+	\end{tabular}
+	\label{tab:orden}
+\end{table}
+
+Los paquetes no llegan en orden: en la ejecución 1, R5 imprimió primero las líneas 3, 4, 1, 7, 9, 10, 12, 13, 15, 16, 2 y 19. Round-robin envía paquetes consecutivos por caminos de distinto largo, así que uno que sale después por un camino corto adelanta a los anteriores, y el orden cambia de una ejecución a otra. Con TTL 10 se pierde además entre el 5\% y el 8\% de las líneas, las que necesitarían 11 o más saltos; con TTL 64 llegan todas, igual de desordenadas. Con un archivo de 1000 líneas, R1 alcanzó a recibir solo 282 paquetes: el resto se perdió en el buffer de su socket, porque \code{prueba\_router.py} envía más rápido de lo que R1 procesa y UDP no tiene control de flujo. IP no garantiza ni el orden ni la entrega; eso le corresponde a la capa de transporte, como en TCP.
+
+\section{Ejecución y repositorio}
+\begin{salida}
+python3 router.py 127.0.0.1 8881 rutas/rutas_R1_v3.txt
+python3 red.py rutas/rutas_R*_v3.txt
+python3 enviar.py 127.0.0.1 8885 "hola R5" 127.0.0.1 8881 [TTL]
+python3 prueba_router.py "127.0.0.1;8885;10" 127.0.0.1 8881 < archivo.txt
+python3 pruebas/test_funciones.py
+\end{salida}
+Las pruebas del informe se repiten con los scripts de \code{pruebas/}, que guardan sus salidas en \code{pruebas/salida/}. El código está en \url{https://github.com/MFSaavedra/A5C3_Redes}.
+
+\section{Declaración de uso de IA}
+En la elaboración de este informe se utilizó un modelo de inteligencia artificial, Claude (Opus 5.5), para editar el template de LaTeX, organizar secciones y crear con graphviz las figuras \ref{fig:red-5}, \ref{fig:red-7} y \ref{fig:red-default}.
+
+Su uso se resume a:
+\begin{itemize}
+	\item Aclarar conceptos relacionados con forwarding, tablas de rutas y TTL.
+	\item Implementar, corregir/debuggear y complementar código; y otras discusiones técnicas de programación.
+	\item Diseñar las tablas de rutas de las redes de prueba.
+	\item Escribir los scripts de las pruebas, con y sin TTL, y redactar las secciones correspondientes a partir de sus salidas.
+	\item Redactar la explicación de las decisiones de diseño a partir del código.
+\end{itemize}
+
+El modelo se empleó como herramienta de consulta y explicación para comprender mejor los temas técnicos, y como apoyo en la implementación del código y en la ejecución y documentación de las pruebas.
+
+% FIN DEL DOCUMENTO
+\end{document}

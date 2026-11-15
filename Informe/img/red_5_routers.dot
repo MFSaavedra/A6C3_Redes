@@ -1,0 +1,21 @@
+// Red de 5 routers (tablas rutas_R*_v3.txt). neato con posiciones fijas, en puntos (inputscale=72).
+// La coma final de fontname evita que Pango lea "Roman" como estilo de la fuente.
+graph red_5_routers {
+    layout=neato;
+    inputscale=72;
+    pad=0.05;
+    node [fontname="Latin Modern Roman,", fontsize=8.5, shape=ellipse, width=0.55, height=0.36, margin=0];
+    edge [penwidth=0.8];
+
+    R1 [label="R1\n8881", pos="0,0!"];
+    R2 [label="R2\n8882", pos="95,0!"];
+    R3 [label="R3\n8883", pos="190,38!"];
+    R4 [label="R4\n8884", pos="190,-38!"];
+    R5 [label="R5\n8885", pos="285,0!"];
+
+    R1 -- R2;
+    R2 -- R3;
+    R2 -- R4;
+    R3 -- R5;
+    R4 -- R5;
+}
