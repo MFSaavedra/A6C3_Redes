@@ -95,7 +95,8 @@ def fragment_IP_packet(IP_packet: bytes, MTU: int) -> list:
         fragment["offset"] = initial_offset + offset
         fragment["message"] = message
         fragment["size"] = len(message)
-        fragment["flag"] = int(offset + len(message) < len(packet["message"]))
+        is_last = offset + len(message) == len(packet["message"])
+        fragment["flag"] = packet["flag"] if is_last else 1
         fragments.append(create_packet(fragment))
     return fragments
 
