@@ -28,6 +28,9 @@ opcionalmente, el TTL, que por omisión es 64. `prueba_router.py` envía cada l�
 estándar, o del archivo que se le pase como cuarto argumento, en un paquete distinto; los headers
 `IP;puerto;TTL` van entre comillas porque la shell interpreta `;`.
 
+Para repetir pruebas manuales con `enviar.py`, reinicia la red entre datagramas si ambos usan el ID
+predeterminado `0`; de lo contrario, el router los agrupa como fragmentos del mismo datagrama.
+
 ## Tablas de rutas
 
 Las tablas de `rutas/` se llaman `rutas_RN_vK.txt`:
