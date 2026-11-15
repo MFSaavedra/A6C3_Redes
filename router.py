@@ -117,7 +117,7 @@ def reassemble_IP_packet(fragment_list: list) -> Optional[bytes]:
     if first["offset"] != 0:
         return None
 
-    identity = ("ip", "port", "ttl", "id")
+    identity = ("ip", "port", "id")
     expected_offset = 0
     for index, fragment in enumerate(fragments):
         if any(fragment[field] != first[field] for field in identity):
