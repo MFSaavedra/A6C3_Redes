@@ -196,6 +196,9 @@ def read_routes(routes_file_name: str) -> list:
 # alternativas hacia esa área, de la próxima que se usará. Cada área tiene su propia cuenta.
 round_robin_state = {}
 
+# Paquetes recibidos por el router, agrupados por ID de datagrama.
+received_packets = {}
+
 
 def check_routes(routes_file_name: str, destination_address: tuple) -> Optional[tuple]:
     """Retorna ((IP, puerto), MTU) del siguiente salto hacia destination_address,
@@ -228,6 +231,7 @@ def handle_packet(router_socket, router_address, routes_file_name, IP_packet):
         return
     destination_address = (packet["ip"], packet["port"])
     if destination_address == router_address:
+        received_packets.setdefault(packet["id"], []).append(IP_packet)
         print(packet["message"].decode(errors="replace"))
         return
     try:
