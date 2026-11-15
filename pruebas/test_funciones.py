@@ -11,7 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from router import (check_routes, create_packet, fragment_IP_packet, handle_packet, parse_packet, received_packets, reassemble_IP_packet)  # noqa: E402
+from router import (check_routes, create_packet, fragment_IP_packet, handle_packet, parse_packet,
+                    received_packets, reassemble_IP_packet, round_robin_state)  # noqa: E402
 
 
 def routes(name):
@@ -160,6 +161,34 @@ check("reensamblaje del paquete completo con fragmentos desordenados", reassembl
 check("lista incompleta de fragmentos", reassemble_IP_packet(fragments[:-1]), None)
 check("paquete sin fragmentar", reassemble_IP_packet([fragment_source]), fragment_source)
 
+print("\n== Pruebas de FLAG al re-fragmentar ==")
+
+packet_flag_1 = create_packet({
+    "ip": "127.0.0.1",
+    "port": 8885,
+    "ttl": 10,
+    "id": 350,
+    "offset": 0,
+    "flag": 1,
+    "message": b"X" * 100
+})
+
+fragments_flag_1 = fragment_IP_packet(packet_flag_1, 50)
+check("FLAG 1 se conserva en todos los subfragmentos", [parse_packet(f)["flag"] for f in fragments_flag_1], [1, 1, 1, 1])
+
+packet_flag_0 = create_packet({
+    "ip": "127.0.0.1",
+    "port": 8885,
+    "ttl": 10,
+    "id": 351,
+    "offset": 0,
+    "flag": 0,
+    "message": b"X" * 100
+})
+
+fragments_flag_0 = fragment_IP_packet(packet_flag_0, 50)
+check("FLAG 0 solo en el último subfragmento", [parse_packet(f)["flag"] for f in fragments_flag_0], [1, 1, 1, 0])
+
 print("\n== Recepción, almacenamiento y reensamblaje por ID")
 received_packets.clear()
 router_address = ("127.0.0.1", 8881)
@@ -178,5 +207,36 @@ check("fragmentos del ID 202", received_packets[202], [fragments_b[0], fragments
 check("mensajes reensamblados en orden de llegada completa", output.getvalue().splitlines(),
       ["ABCDEFGHIJKLMNO", "1234567890abcde"])
 check("fragmentos locales no reenviados", fake_socket.sent, [])
+
+print("\n== Pruebas de actividad 6 con configuración de 5 routers con MTU")
+round_robin_state.clear()
+small_packet = create_packet({"ip": "127.0.0.1", "port": 8885, "ttl": 10, "id": 347, "offset": 0, "flag": 0, "message": b"hola!"})
+fake_socket = FakeSocket()
+handle_packet(fake_socket, ("127.0.0.1", 8881), routes("rutas_R1_v3_mtu.txt"), small_packet)
+check("paquete de 5 bytes no se fragmenta", len(fake_socket.sent), 1)
+check("TTL del paquete reenviado", fake_socket.sent[0][0]["ttl"], 9)
+check("ID del paquete reenviado", fake_socket.sent[0][0]["id"], 347)
+check("destino del primer salto", fake_socket.sent[0][1], ("127.0.0.1", 8882))
+
+round_robin_state.clear()
+round_robin_hops = [check_routes(routes("rutas_R2_v3_mtu.txt"), ("127.0.0.1", 8885)) for _ in range(4)]
+check("round-robin con MTU en R2", round_robin_hops, [(("127.0.0.1", 8883), 50), (("127.0.0.1", 8884), 80)] * 2)
+
+large_packet = create_packet({"ip": "127.0.0.1", "port": 8885, "ttl": 10, "id": 348, "offset": 0, "flag": 0, "message": b"X" * 132})
+fake_socket = FakeSocket()
+handle_packet(fake_socket, ("127.0.0.1", 8881), routes("rutas_R1_v3_mtu.txt"), large_packet)
+first_hop_fragments = [create_packet(fragment) for fragment, address in fake_socket.sent]
+check("paquete de 150 bytes fragmentado en R1", len(first_hop_fragments), 2)
+check("tamaño de fragmentos enviados por R1", [len(fragment) for fragment in first_hop_fragments], [100, 68])
+check("destino de los fragmentos de R1", {address for _, address in fake_socket.sent}, {("127.0.0.1", 8882)})
+
+fake_socket = FakeSocket()
+for fragment in first_hop_fragments:
+    handle_packet(fake_socket, ("127.0.0.1", 8882), routes("rutas_R2_v3_mtu.txt"), fragment)
+check("refragmentación realizada por R2",
+      all(len(create_packet(fragment)) <= (50 if address[1] == 8883 else 80)
+          for fragment, address in fake_socket.sent),
+      True)
+check("R2 reenvía 4 fragmentos", len(fake_socket.sent), 4)
 
 print("\nTodas las pruebas pasaron")
