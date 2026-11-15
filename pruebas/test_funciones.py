@@ -1,8 +1,8 @@
-"""Pruebas de parse_packet, create_packet, check_routes y del manejo del TTL, sin levantar routers.
+"""Pruebas de parsing, rutas, TTL, fragmentación y reensamblaje, sin levantar routers.
 
 Uso: python3 pruebas/test_funciones.py
 
-Verifica el resultado esperado de las pruebas de las actividades 5 y 6. Termina con error en la primera prueba que falla.
+Verifica el resultado esperado de las actividades 5 y 6. Termina con error en la primera prueba que falla.
 """
 import contextlib
 import io
@@ -36,7 +36,7 @@ def expect_value_error(description, function, argument):
 # ACTIVIDAD 5: Forwarding básico
 # ==================================================
 
-print("== Parse y create (paso 4 de la parte I, con el TTL del paso 1 de la parte II y fragmentación (act 6))")
+print("== Parse y create de las actividades 5 y 6")
 IP_packet_v1 = (bytes([127, 0, 0, 1]) + (8885).to_bytes(2, "big") + bytes([10]) +
                 (42).to_bytes(2, "big") + (3).to_bytes(4, "big") +
                 (4).to_bytes(4, "big") + bytes([1]) + b"hola")

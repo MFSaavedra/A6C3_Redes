@@ -1,10 +1,11 @@
-"""Router del mini-Internet de la actividad Forwarding básico (CC4303).
+"""Router del mini-Internet de las actividades Forwarding básico y Fragmentación (CC4303).
 
 Uso: python3 router.py router_IP router_puerto router_rutas.txt
 
 El router escucha en (router_IP, router_puerto) paquetes IP simulados que llegan por UDP. Descarta
-los que llegan con TTL 0. Si un paquete va dirigido a él, imprime su mensaje; si no, busca el
-siguiente salto en su tabla de rutas y se lo reenvía con el TTL disminuido en 1.
+los que llegan con TTL 0. Si un paquete va dirigido a él, almacena sus fragmentos por ID e intenta
+reensamblarlos; si no, busca el siguiente salto en su tabla de rutas, disminuye el TTL y fragmenta
+el paquete según el MTU del enlace antes de reenviarlo.
 """
 import ipaddress
 import socket
@@ -26,7 +27,8 @@ BUFFER_SIZE = 65535  # cabe cualquier datagrama UDP
 
 def parse_packet(IP_packet: bytes) -> dict:
     """Convierte un paquete IP en un dict con las llaves ip (str a.b.c.d), port (int), ttl (int), 
-    id (int), offset (int), size (int), flag (int) y message (bytes, sin headers). Lanza ValueError si el paquete es más corto que el header."""
+    id (int), offset (int), size (int), flag (int) y message (bytes, sin headers). Lanza ValueError si el paquete es más corto que el header 
+    o si alguno de los campos está fuera de rango."""
     if len(IP_packet) < HEADER_SIZE:
         raise ValueError(f"el paquete tiene {len(IP_packet)} bytes y el header ocupa {HEADER_SIZE}")
     size = int.from_bytes(IP_packet[13:17], "big")
@@ -79,7 +81,7 @@ def create_packet(parsed_IP_packet: dict) -> bytes:
 
 
 def fragment_IP_packet(IP_packet: bytes, MTU: int) -> list:
-    """Fragmenta IP_packet en paquetes cuyo tamaño total no supera MTU."""
+    """Retorna IP_packet o sus fragmentos, todos con tamaño total menor o igual al MTU."""
     if MTU <= HEADER_SIZE:
         raise ValueError(f"MTU debe ser mayor que el header de {HEADER_SIZE} bytes")
     if len(IP_packet) <= MTU:
@@ -102,7 +104,7 @@ def fragment_IP_packet(IP_packet: bytes, MTU: int) -> list:
 
 
 def reassemble_IP_packet(fragment_list: list) -> Optional[bytes]:
-    """Reensambla una lista de fragmentos IP ordenándolos por offset."""
+    """Reensambla fragmentos completos y ordenados por offset, o retorna None si faltan."""
     if not fragment_list:
         return None
 
@@ -174,8 +176,8 @@ class Route(NamedTuple):
 
 def read_routes(routes_file_name: str) -> list:
     """Lee una tabla de rutas. Cada línea tiene la forma
-        [Red (CIDR)] [Puerto_Inicial] [Puerto_final] [IP_Para_llegar] [Puerto_para_llegar]
-    Se ignoran las líneas vacías, las que empiezan con # y las columnas sobrantes."""
+        [Red (CIDR)] [Puerto_Inicial] [Puerto_final] [IP_Para_llegar] [Puerto_para_llegar] [MTU]
+    El MTU es opcional y vale 1500 si se omite. Se ignoran las líneas vacías, las que empiezan con # y las columnas sobrantes."""
     routes = []
     with open(routes_file_name, encoding="utf-8") as routes_file:
         for line_number, line in enumerate(routes_file, start=1):
